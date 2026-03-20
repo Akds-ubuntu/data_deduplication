@@ -1,0 +1,28 @@
+
+algorithm: minhash
+
+input_file: "BigCloneBench_dataset.jsonl"
+# output_path: results.json
+
+num_perm:  512         
+ngram_size: 3         
+bands: 128
+threshold: 0.8
+
+
+text_field: "func"
+use_semantic_lsh: False
+# model_name: "BAAI/bge-small-en-v1.5"
+# threshold_semantic_lsh: 0.8
+
+
+# use_bloom: false       
+# debug: false
+          
+# algorithm: simhash
+# ngram_size: 3     
+# threshold: 3   
+
+# algorithm: semantic
+
+# model_name: BAAI/bge-small-en-v1.5
