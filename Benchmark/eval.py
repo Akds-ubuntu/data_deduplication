@@ -25,7 +25,6 @@ def evaluate_pairs(
     ),
     config_file: Optional[Path] = typer.Option(Path("config.yaml"), "--config", "-c"),
 ):
-    """Оценка качества дедупликации с использованием NumPy и Sklearn."""
 
     if not eval_file.exists():
         console.print(f"File not found: {eval_file}", style="red")
@@ -45,9 +44,12 @@ def evaluate_pairs(
     num_lines = sum(1 for _ in open(eval_file, "r"))
 
     console.print(f"[bold blue]Starting evaluation on {eval_file}...[/bold blue]")
-
+    loc = 1000
+    c = 0
     with open(eval_file, "r") as f:
         for line in tqdm(f, total=num_lines, desc="Processing pairs", unit="pair"):
+            if c >= 1000:
+                break
             data = json.loads(line)
             code1 = data["code1"]
             code2 = data["code2"]
@@ -64,6 +66,7 @@ def evaluate_pairs(
                     break
 
             y_pred_list.append(prediction)
+            c += 1
 
     y_true = np.array(y_true_list)
     y_pred = np.array(y_pred_list)

@@ -3,30 +3,46 @@ import re
 from typing import Dict, List, Any
 from collections import defaultdict
 import numpy as np
+from tqdm import tqdm
 
 from dedup_tool.core.strategy import DedupStrategy
 from dedup_tool.core.strategyregistry import StrategyRegistry
 from dedup_tool.utils.sha_hash import sha1_hash
+from dedup_tool.utils.tokenizers import text_char_shingles, text_shingles
 from dedup_tool.utils.union_find import UnionFind
 
-NON_ALPHA = re.compile(r"\W+")
 
 
 @StrategyRegistry.register("simhash")
 class SimHashDedup(DedupStrategy):
-    """SimHash-based deduplication strategy."""
 
-    def __init__(self, ngram_size: int = 3, threshold: int = 3):
+    def __init__(
+        self,
+        ngram_size: int = 3,
+        threshold: int = 3,
+        num_blocks: int = 8,
+        jaccard_threshold: float = 0.0,
+    ):
         self.ngram_size = ngram_size
         self.threshold = threshold
+        self.jaccard_threshold = jaccard_threshold
         self.logger = logging.getLogger(__name__)
         self.all_signatures: List[np.uint64] = []
+        self.num_blocks = num_blocks
+        self.bits_per_block = 64 // num_blocks
+        self.block_mask = np.uint64((1 << self.bits_per_block) - 1)
+        self.shingle_sets: List[set] = []
 
         self._shifts = np.arange(64, dtype=np.uint64)
 
     @classmethod
     def from_config(cls, config):
-        return cls(ngram_size=config.ngram_size, threshold=config.threshold)
+        return cls(
+            ngram_size=config.ngram_size,
+            threshold=config.threshold,
+            num_blocks=config.num_blocks,
+            jaccard_threshold=config.jaccard_threshold,
+        )
 
     def deduplicate(self, texts: List[str]) -> Dict[str, Any]:
         self.logger.debug(f"Starting SimHash deduplication for {len(texts)} texts")
@@ -47,21 +63,14 @@ class SimHashDedup(DedupStrategy):
 
     def _generate_signatures(self, texts: List[str]) -> List[np.uint64]:
         signatures = []
-        for text in texts:
-            if len(text) < self.ngram_size:
-                tokens = {text} if text else set()
-            else:
-                tokens = {
-                    text[i : i + self.ngram_size]
-                    for i in range(len(text) - self.ngram_size + 1)
-                }
-
+        self.shingle_sets = []
+        for text in tqdm(texts, desc="SimHash signatures", leave=False):
+            tokens = text_char_shingles(text, self.ngram_size)
+            self.shingle_sets.append(tokens)
             signatures.append(self._compute_simhash(tokens))
-
         return signatures
 
     def _compute_simhash(self, tokens: set) -> np.uint64:
-        """Векторизованное вычисление SimHash."""
         if not tokens:
             return np.uint64(0)
 
@@ -86,20 +95,12 @@ class SimHashDedup(DedupStrategy):
 
     def _find_clusters(self, num_docs: int) -> Dict[int, List[int]]:
         uf = UnionFind(num_docs)
-        if self.threshold > 3:
-            self.logger.warning(
-                "Threshold > 3. Block indexing is optimized for threshold <= 3."
-            )
-
         index = defaultdict(list)
-        for doc_id in range(num_docs):
+        for doc_id in tqdm(range(num_docs), desc="SimHash clustering", leave=False):
             sig = self.all_signatures[doc_id]
-
             blocks = [
-                (sig >> np.uint64(0)) & np.uint64(0xFFFF),
-                (sig >> np.uint64(16)) & np.uint64(0xFFFF),
-                (sig >> np.uint64(32)) & np.uint64(0xFFFF),
-                (sig >> np.uint64(48)) & np.uint64(0xFFFF),
+                (sig >> np.uint64(i * self.bits_per_block)) & self.block_mask
+                for i in range(self.num_blocks)
             ]
 
             candidates = set()
@@ -115,6 +116,15 @@ class SimHashDedup(DedupStrategy):
                         sig, self.all_signatures[candidate_id]
                     )
                     if dist <= self.threshold:
+                        if self.jaccard_threshold > 0:
+                            set1 = self.shingle_sets[doc_id]
+                            set2 = self.shingle_sets[candidate_id]
+                            inter = len(set1 & set2)
+                            if inter == 0:
+                                continue
+                            jaccard = inter / (len(set1) + len(set2) - inter)
+                            if jaccard < self.jaccard_threshold:
+                                continue
                         uf.union(doc_id, candidate_id)
 
         clusters = defaultdict(list)

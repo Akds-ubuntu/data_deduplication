@@ -1,8 +1,12 @@
+import itertools
 import logging
+from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Any
 from collections import defaultdict
 import numpy as np
+from tqdm import tqdm 
 
+from dedup_tool.utils.batch_reader import process_document
 from dedup_tool.utils.fastembed_verifier import FastEmbedVerifier
 from dedup_tool.index.lsh import LSHIndex
 
@@ -15,7 +19,6 @@ from .strategy import DedupStrategy
 
 @StrategyRegistry.register("minhash")
 class MinHashDedup(DedupStrategy):
-    """MinHash-based deduplication using LSH."""
 
     def __init__(
         self,
@@ -28,15 +31,9 @@ class MinHashDedup(DedupStrategy):
         verify_ast: bool = False,
         use_semantic: bool = False,
         model_name: str = "BAAI/bge-small-en-v1.5",
+        mode: str = "text",
     ):
-        """Initialize MinHash deduplicator.
 
-        Args:
-            num_perm: Number of permutations
-            ngram_size: Size of n-grams
-            bands: Number of LSH bands
-            seed: Random seed
-        """
         self.num_perm = num_perm
         self.ngram_size = ngram_size
         self.bands = bands
@@ -44,7 +41,9 @@ class MinHashDedup(DedupStrategy):
         self.threshold = threshold
         self.verify_ast = verify_ast
         self.use_semantic = use_semantic
+        self.mode = mode
         self.logger = logging.getLogger(__name__)
+        self.logger.propagate = False
 
         self.rows_per_band = num_perm // bands
         self.permutations = None
@@ -76,7 +75,6 @@ class MinHashDedup(DedupStrategy):
         )
 
     def _prepare_permutations(self):
-        """Prepare permutation parameters for MinHash."""
         self.logger.info(
             f"Params: num_perm={self.num_perm}, bands={self.bands}, threshold={self.threshold}, ngram_size={self.ngram_size}"
         )
@@ -104,17 +102,14 @@ class MinHashDedup(DedupStrategy):
         )
 
     def deduplicate(self, texts: List[str]) -> Dict[str, Any]:
-        """Deduplicate texts using MinHash + LSH.
-
-        Args:
-            texts: List of text strings
-
-        Returns:
-            Dictionary with clusters, signatures, and metadata
-        """
         self.logger.debug(f"Starting deduplication for {len(texts)} texts")
 
         self.all_signatures = self._generate_signatures(texts)
+
+        self.hash_matrix = np.array(
+            [doc["__raw_hashes__"] for doc in self.all_signatures],
+            dtype=np.uint64,
+        )
 
         lsh_index = self._build_hash_tables()
 
@@ -141,27 +136,30 @@ class MinHashDedup(DedupStrategy):
         }
 
     def _generate_signatures(self, texts: List[str]) -> List[Dict]:
-        """Generate MinHash signatures for all texts."""
-        all_signatures = []
-        # with tqdm(
-        #     total=len(texts), desc="Generating MinHash signatures", disable=False
-        # ) as pbar:
-        for i, text in enumerate(texts):
-            result = embed_func(
-                content=text,
-                idx=i,
-                num_perm=self.num_perm,
-                ngram_size=self.ngram_size,
-                hashranges=self.hashranges,
-                permutations=self.permutations,
+        tasks = [
+            (
+                i,
+                text,
+                self.num_perm,
+                self.ngram_size,
+                self.hashranges,
+                self.permutations,
             )
-            all_signatures.append(result)
+            for i, text in enumerate(texts)
+        ]
 
-        self.logger.debug("MinHash signature generation completed")
-        return all_signatures
+        with Pool(processes=cpu_count()) as pool:
+            results = list(tqdm(
+                pool.imap(process_document, tasks, chunksize=256),
+                total=len(tasks),
+                desc="Generating MinHash signatures",
+                unit="docs"
+            ))
+
+        return results
+
 
     def _build_hash_tables(self) -> List[Dict]:
-        """Build LSH hash tables from signatures."""
         num_bands = len(self.all_signatures[0]["__signatures__"])
         hash_tables = [defaultdict(list) for _ in range(num_bands)]
 
@@ -171,7 +169,6 @@ class MinHashDedup(DedupStrategy):
                 hash_tables[band_idx][band_bytes].append(doc_id)
 
         self.logger.debug(f"Built {len(hash_tables)} hash tables")
-        # return hash_tables
         lsh_index = LSHIndex(num_bands=num_bands)
         for doc in self.all_signatures:
             lsh_index.add_signature(
@@ -188,45 +185,46 @@ class MinHashDedup(DedupStrategy):
 
     def _find_clusters(
         self,
-        texts: List[str],
-        num_docs: int,
-        hash_tables: List[Dict],
-        threshold: float,
+        texts,
+        num_docs,
+        hash_tables,
+        threshold,
         verifier=None,
-    ) -> Dict[int, List[int]]:
-        """Find clusters using Union-Find on hash table buckets."""
+    ):
         uf = UnionFind(num_docs)
-        checked_pairs = set()
+        pairs = []
 
         for table in hash_tables:
             for bucket in table.values():
-                if len(bucket) <= 1:
+                if len(bucket) < 2:
                     continue
-                first = bucket[0]
-                for doc_id in bucket[1:]:
-                    pair = tuple(sorted((first, doc_id)))
-                    if pair in checked_pairs:
-                        continue
-                    checked_pairs.add(pair)
-                    if self.compute_similarity(first, doc_id) >= threshold:
-                        is_duplicate = True
-                        if verifier is not None:
-                            is_duplicate = verifier.verify(texts[first], texts[doc_id])
-                        if is_duplicate:
-                            uf.union(first, doc_id)
+
+                for pair in itertools.combinations(bucket, 2):
+                    pairs.append(pair)
+
+        if not pairs:
+            return {}
+
+        pairs = np.unique(np.array(pairs, dtype=np.int32), axis=0)
+
+        left = self.hash_matrix[pairs[:, 0]]
+        right = self.hash_matrix[pairs[:, 1]]
+
+        sims = np.count_nonzero(left == right, axis=1) / self.num_perm
+
+        valid_pairs = pairs[sims >= threshold]
+
+        for i, j in tqdm(valid_pairs, desc="Clustering", leave=False):
+            if verifier is None or verifier.verify(texts[i], texts[j]):
+                uf.union(i, j)
 
         clusters = defaultdict(list)
-        for doc_id in range(num_docs):
-            root = uf.find(doc_id)
-            clusters[root].append(doc_id)
+        for i in range(num_docs):
+            clusters[uf.find(i)].append(i)
 
         return dict(clusters)
 
     def compute_similarity(self, idx1: int, idx2: int) -> float:
-        """Compute Jaccard similarity between two documents.
-
-        This is an estimate based on matching hash bands.
-        """
         sig1 = self.all_signatures[idx1]["__raw_hashes__"]
         sig2 = self.all_signatures[idx2]["__raw_hashes__"]
 

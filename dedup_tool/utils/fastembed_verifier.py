@@ -4,8 +4,6 @@ import logging
 
 
 class FastEmbedVerifier:
-    """Семантический фильтр на основе косинусного сходства эмбеддингов."""
-
     def __init__(
         self, model_name: str = "BAAI/bge-small-en-v1.5", threshold: float = 0.85
     ):
@@ -15,7 +13,6 @@ class FastEmbedVerifier:
         self.threshold = threshold
 
     def verify(self, text1: str, text2: str) -> bool:
-        """Сравнивает два текста семантически. Возвращает True, если дубликаты."""
         try:
             embeddings = list(self.model.embed([text1, text2]))
             emb1, emb2 = embeddings[0], embeddings[1]

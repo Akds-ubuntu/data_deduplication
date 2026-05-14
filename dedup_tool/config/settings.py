@@ -6,7 +6,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class DedupConfig(BaseSettings):
-    """Main configuration for deduplication."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -25,8 +24,16 @@ class DedupConfig(BaseSettings):
 
     num_perm: int = Field(default=128, description="Number of permutations for MinHash")
     ngram_size: int = Field(default=5, description="N-gram size for shingling")
+    mode: str = Field(default="text", description="Mode for embedding generation")
 
     bands: int = Field(default=16, description="Number of bands in LSH")
+    jaccard_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Jaccard similarity threshold for simhash",
+    )
+    num_blocks: int = Field(default=8, description="Number of blocks for SimHash")
 
     threshold: float | int = Field(
         default=0.5, ge=0.0, le=64.0, description="Similarity threshold (0.0-64.0)"
@@ -47,7 +54,6 @@ class DedupConfig(BaseSettings):
 
     @classmethod
     def from_yaml(cls, yaml_path: Path = Path("config.yaml")):
-        """Load configuration from YAML file."""
         if not yaml_path.exists():
             return cls()
 
