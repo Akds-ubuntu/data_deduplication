@@ -106,6 +106,11 @@ def deduplicate_jsonl(
     output_dupes: Optional[Path] = typer.Option(
         None, "--dupes", help="Path for duplicates JSONL"
     ),
+    output_dir: Optional[Path] = typer.Option(
+        None,
+        "--output-dir",
+        help="Directory for output files",
+    ),
     display_results: bool = typer.Option(
         False, "--display_results", help="Display clusters in consel"
     ),
@@ -131,14 +136,19 @@ def deduplicate_jsonl(
 
     field_to_read = text_field or getattr(config, "text_field", "text")
 
-    if not output_clean:
-        output_clean = Path(f"deduplicate_data/clean_{input_file.name}")
-    if not output_dupes:
-        output_dupes = Path(f"deduplicate_data/duplicates_{input_file.name}")
+    if output_dir is None:
+        output_dir = getattr(config, "output_dir", "deduplicate_data")
 
-    output_dir = os.path.dirname(output_clean)
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
+    if isinstance(output_dir, str):
+        output_dir = Path(output_dir)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if output_clean is None:
+        output_clean = output_dir / f"clean_{input_file.name}"
+
+    if output_dupes is None:
+        output_dupes = output_dir / f"duplicates_{input_file.name}"
 
     try:
         console.print(f"\nLoading JSONL file: {input_file}")

@@ -34,7 +34,7 @@ def read_jsonl_in_batches(file_path, text_field, batch_size=10000):
 
 
 def process_document(args):
-    idx, text, num_perm, ngram_size, hashranges, permutations = args
+    idx, text, num_perm, ngram_size, hashranges, permutations, mode = args
 
     return embed_func(
         content=text,
@@ -43,4 +43,5 @@ def process_document(args):
         ngram_size=ngram_size,
         hashranges=hashranges,
         permutations=permutations,
+        mode=mode,
     )

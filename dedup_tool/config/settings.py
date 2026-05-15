@@ -20,7 +20,7 @@ class DedupConfig(BaseSettings):
     input_file: str = Field(
         default="", description="Path to input file or directory with texts"
     )
-    output_path: str = Field(default="results.json", description="Path to save results")
+    output_dir: str = Field(default="deduplicate_data", description="Directory for output files")
 
     num_perm: int = Field(default=128, description="Number of permutations for MinHash")
     ngram_size: int = Field(default=5, description="N-gram size for shingling")

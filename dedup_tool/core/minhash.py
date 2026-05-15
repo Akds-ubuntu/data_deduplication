@@ -72,6 +72,7 @@ class MinHashDedup(DedupStrategy):
             use_semantic=getattr(config, "use_semantic_lsh", False),
             model_name=getattr(config, "model_name", "BAAI/bge-small-en-v1.5"),
             threshold_semantic=getattr(config, "threshold_semantic_lsh", 0.8),
+            mode=getattr(config, "mode", "text"),
         )
 
     def _prepare_permutations(self):
@@ -144,6 +145,7 @@ class MinHashDedup(DedupStrategy):
                 self.ngram_size,
                 self.hashranges,
                 self.permutations,
+                self.mode,
             )
             for i, text in enumerate(texts)
         ]
