@@ -44,7 +44,6 @@ def evaluate_pairs(
     num_lines = sum(1 for _ in open(eval_file, "r"))
 
     console.print(f"[bold blue]Starting evaluation on {eval_file}...[/bold blue]")
-    loc = 1000
     c = 0
     with open(eval_file, "r") as f:
         for line in tqdm(f, total=num_lines, desc="Processing pairs", unit="pair"):

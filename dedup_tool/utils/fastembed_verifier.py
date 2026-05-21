@@ -1,3 +1,5 @@
+from typing import List
+
 import numpy as np
 from fastembed import TextEmbedding
 import logging
@@ -12,16 +14,14 @@ class FastEmbedVerifier:
         self.model = TextEmbedding(model_name)
         self.threshold = threshold
 
-    def verify(self, text1: str, text2: str) -> bool:
+    def embed_unique_texts(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
         try:
-            embeddings = list(self.model.embed([text1, text2]))
-            emb1, emb2 = embeddings[0], embeddings[1]
-
-            cosine_sim = np.dot(emb1, emb2) / (
-                np.linalg.norm(emb1) * np.linalg.norm(emb2)
-            )
-
-            return cosine_sim >= self.threshold
+            embeddings = list(self.model.embed(texts, batch_size=batch_size))
+            embeddings = np.array(embeddings, dtype=np.float32)
+            
+            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+            norms[norms == 0] = 1e-12  
+            return embeddings / norms
         except Exception as e:
-            self.logger.error(f"Error in semantic verification: {e}")
-            return False
+            self.logger.error(f"Error in batch embedding generation: {e}")
+            raise e

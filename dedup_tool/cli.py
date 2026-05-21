@@ -28,7 +28,6 @@ app = typer.Typer(
 
 
 def get_strategy(config: DedupConfig) -> DedupStrategy:
-    """Factory function to get the right deduplication strategy."""
     try:
         strategy_class = StrategyRegistry.get(config.algorithm)
     except KeyError:
@@ -41,7 +40,6 @@ def test(
         Path("config.yaml"), "--config", "-c", help="Path to YAML config file"
     ),
 ):
-    """Run deduplication on test data."""
     config = DedupConfig.from_yaml(config_file)
     test_texts = [
         # '    @Test(expected = GadgetException.class)\n    public void malformedGadgetSpecIsCachedAndThrows() throws Exception {\n        HttpRequest request = createCacheableRequest();\n        expect(pipeline.execute(request)).andReturn(new HttpResponse("malformed junk")).once();\n        replay(pipeline);\n        try {\n            specFactory.getGadgetSpec(createContext(SPEC_URL, false));\n            fail("No exception thrown on bad parse");\n        } catch (GadgetException e) {\n        }\n        specFactory.getGadgetSpec(createContext(SPEC_URL, false));\n    }\n',

@@ -55,8 +55,12 @@ class SemanticDedup(DedupStrategy):
         self.logger.info(f"Building FAISS Index (Size: {self.all_embeddings.shape})...")
 
         dim = self.all_embeddings.shape[1]
-        self.index = faiss.IndexFlatIP(dim)
+        quantizer = faiss.IndexFlatIP(dim)
+        nlist = 256
+        self.index = faiss.IndexIVFFlat(quantizer, dim, nlist, faiss.METRIC_INNER_PRODUCT)
+        self.index.train(self.all_embeddings)
         self.index.add(self.all_embeddings)
+        self.index.nprobe = 32
 
         start_index = time.time()
         clusters = self._find_clusters(len(texts))

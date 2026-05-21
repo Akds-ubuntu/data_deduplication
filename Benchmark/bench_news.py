@@ -23,7 +23,7 @@ def run_news_benchmark(algorithm: str, config_kwargs: dict, sample_size: int = 1
 
     config = DedupConfig(algorithm=algorithm, **config_kwargs)
     strategy = get_strategy(config)
-
+   
     start = time.time()
     result = strategy.deduplicate(texts)
     elapsed = time.time() - start

@@ -8,7 +8,7 @@ from tqdm import tqdm
 from dedup_tool.core.strategy import DedupStrategy
 from dedup_tool.core.strategyregistry import StrategyRegistry
 from dedup_tool.utils.sha_hash import sha1_hash
-from dedup_tool.utils.tokenizers import text_char_shingles, text_shingles
+from dedup_tool.utils.tokenizers import text_char_shingles
 from dedup_tool.utils.union_find import UnionFind
 
 

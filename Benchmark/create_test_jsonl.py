@@ -35,7 +35,7 @@ def quora_pairs():
 
     df.to_json("quora_pairs.jsonl", orient="records", lines=True, force_ascii=False)
 
-    print(f"Готово! Файл сохранен как quora_pairs.jsonl. Обработано {len(df)} пар.")
+    print(f"quora_pairs.jsonl. Обработано {len(df)} пар.")
 
 
 if __name__ == "__main__":

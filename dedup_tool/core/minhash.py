@@ -11,7 +11,7 @@ from dedup_tool.utils.fastembed_verifier import FastEmbedVerifier
 from dedup_tool.index.lsh import LSHIndex
 
 from dedup_tool.core.strategyregistry import StrategyRegistry
-from dedup_tool.utils import UnionFind, embed_func
+from dedup_tool.utils import UnionFind
 from dedup_tool.utils.embeded import MERSENNE_PRIME
 
 from .strategy import DedupStrategy
@@ -103,8 +103,6 @@ class MinHashDedup(DedupStrategy):
         )
 
     def deduplicate(self, texts: List[str]) -> Dict[str, Any]:
-        self.logger.debug(f"Starting deduplication for {len(texts)} texts")
-
         self.all_signatures = self._generate_signatures(texts)
 
         self.hash_matrix = np.array(
@@ -150,27 +148,25 @@ class MinHashDedup(DedupStrategy):
             for i, text in enumerate(texts)
         ]
 
-        with Pool(processes=cpu_count()) as pool:
-            results = list(tqdm(
-                pool.imap(process_document, tasks, chunksize=256),
-                total=len(tasks),
-                desc="Generating MinHash signatures",
-                unit="docs"
-            ))
+        num_workers = cpu_count()
+
+        chunksize = max(1, len(tasks) // (num_workers * 4))
+
+        with Pool(processes=num_workers) as pool:
+            results = list(
+                tqdm(
+                    pool.imap(process_document, tasks, chunksize=chunksize),
+                    total=len(tasks),
+                    desc="Generating MinHash signatures",
+                    unit="docs",
+                )
+            )
 
         return results
 
 
     def _build_hash_tables(self) -> List[Dict]:
         num_bands = len(self.all_signatures[0]["__signatures__"])
-        hash_tables = [defaultdict(list) for _ in range(num_bands)]
-
-        for doc in self.all_signatures:
-            doc_id = doc["__id__"]
-            for band_idx, band_bytes in enumerate(doc["__signatures__"]):
-                hash_tables[band_idx][band_bytes].append(doc_id)
-
-        self.logger.debug(f"Built {len(hash_tables)} hash tables")
         lsh_index = LSHIndex(num_bands=num_bands)
         for doc in self.all_signatures:
             lsh_index.add_signature(
@@ -216,8 +212,45 @@ class MinHashDedup(DedupStrategy):
 
         valid_pairs = pairs[sims >= threshold]
 
-        for i, j in tqdm(valid_pairs, desc="Clustering", leave=False):
-            if verifier is None or verifier.verify(texts[i], texts[j]):
+        if verifier is not None and len(valid_pairs) > 0:
+            unique_doc_indices = np.unique(valid_pairs)
+            unique_texts = [texts[idx] for idx in unique_doc_indices]
+            
+            self.logger.info(
+                f"LSH filtered {len(valid_pairs)} candidate pairs. "
+                f"Generating semantic embeddings for {len(unique_doc_indices)} unique docs..."
+            )
+            batch_size = 32
+            all_embs = []
+            
+            for i in tqdm(
+                range(0, len(unique_texts), batch_size), 
+                desc="[Stage 2] Generating Semantic Embeddings", 
+                unit="batch"
+            ):
+                batch = unique_texts[i : i + batch_size]
+                batch_embs = verifier.embed_unique_texts(batch, batch_size=batch_size)
+                all_embs.append(batch_embs)
+                
+            embedded_matrix = np.vstack(all_embs)
+            
+            global_to_local_pos = {idx: pos for pos, idx in enumerate(unique_doc_indices)}
+            
+            for i, j in tqdm(
+                valid_pairs, 
+                desc="[Stage 2] Semantic Pair Verification", 
+                leave=True,
+                unit="pairs"
+            ):
+                pos_i = global_to_local_pos[i]
+                pos_j = global_to_local_pos[j]
+                
+                cosine_sim = float(np.dot(embedded_matrix[pos_i], embedded_matrix[pos_j]))
+                
+                if cosine_sim >= verifier.threshold:
+                    uf.union(i, j)
+        else:
+            for i, j in valid_pairs:
                 uf.union(i, j)
 
         clusters = defaultdict(list)
