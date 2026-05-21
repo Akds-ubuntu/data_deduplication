@@ -77,11 +77,11 @@ if __name__ == "__main__":
     #     sample_size=14211
     # )
 
-    # run_news_benchmark(
-    #     algorithm="semantic",
-    #     config_kwargs={
-    #         "model_name": "BAAI/bge-small-en-v1.5",
-    #         "threshold": 0.85,
-    #     },
-    #     sample_size=14211
-    # )
+    run_news_benchmark(
+        algorithm="semantic",
+        config_kwargs={
+            "model_name": "BAAI/bge-small-en-v1.5",
+            "threshold": 0.85,
+        },
+        sample_size=14211
+    )

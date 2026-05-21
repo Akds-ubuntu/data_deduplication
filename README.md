@@ -1,12 +1,8 @@
-## num_perm: 256         
-## ngram_size: 2         
-## bands: 64
 # Data Deduplication Framework (DDF)
 
 **Data Deduplication Framework** — это высокопроизводительная программная среда для поиска и удаления дубликатов в сверхбольших текстовых датасетах и массивах исходного кода. Система реализует гибридный двухэтапный пайплайн, позволяющий эффективно обходить вычислительную сложность $O(N^2)$.
 
 [![Python Version](https://img.shields.io/badge/python-3.12.3%2B-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ---
 
@@ -70,3 +66,21 @@ threshold_semantic_lsh: 0.8    # Порог схожесть в семантич
 
 # Параметры Semantic
 model_name: "BAAI/bge-small-en-v1.5" # Модель для анализа 
+```
+## Инструкция по запуску
+
+### Скачиваем uv
+``` bash
+pip install uv
+```
+### Теперь устанавливаем зависимости
+``` bash
+uv sync --extra cpu    # для cpu
+uv sync --extra gpu    # для gpu
+```
+### Активируем виртуально окружение
+``` bash
+.venv\Scripts\activate.bat # Windows
+
+source .venv/bin/activate # macOS / Linux
+```
